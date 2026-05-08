@@ -7,7 +7,15 @@ import {
   Clock,
   Zap,
   ClipboardList,
+  Calendar,
+  User,
 } from 'lucide-react';
+import {
+  formatDate,
+  getPriorityColor,
+  getStatusColor,
+  isOverdue,
+} from '../utils/helpers';
 
 const Dashboard = () => {
   const { user } = useAuth();
@@ -21,15 +29,19 @@ const Dashboard = () => {
   });
 
   const [projects, setProjects] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedTaskGroup, setSelectedTaskGroup] = useState(null);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         const statsRes = await taskService.getDashboardStats();
         const projectsRes = await projectService.getAll();
+        const tasksRes = await taskService.getAll();
 
         setStats(statsRes?.data?.data || {});
+        setTasks(Array.isArray(tasksRes?.data?.data) ? tasksRes.data.data : []);
 
         if (Array.isArray(projectsRes?.data?.data)) {
           setProjects(projectsRes.data.data);
@@ -50,6 +62,7 @@ const Dashboard = () => {
     {
       title: 'Total Tasks',
       value: stats.totalTasks || 0,
+      group: 'all',
       icon: ClipboardList,
       color: 'bg-blue-50 border-blue-200',
       iconColor: 'text-blue-600',
@@ -57,6 +70,7 @@ const Dashboard = () => {
     {
       title: 'To Do',
       value: stats.todoTasks || 0,
+      group: 'todo',
       icon: Clock,
       color: 'bg-yellow-50 border-yellow-200',
       iconColor: 'text-yellow-600',
@@ -64,6 +78,7 @@ const Dashboard = () => {
     {
       title: 'In Progress',
       value: stats.inProgressTasks || 0,
+      group: 'inProgress',
       icon: Zap,
       color: 'bg-indigo-50 border-indigo-200',
       iconColor: 'text-indigo-600',
@@ -71,6 +86,7 @@ const Dashboard = () => {
     {
       title: 'Completed',
       value: stats.completedTasks || 0,
+      group: 'completed',
       icon: CheckCircle,
       color: 'bg-green-50 border-green-200',
       iconColor: 'text-green-600',
@@ -78,6 +94,7 @@ const Dashboard = () => {
     {
       title: 'Overdue',
       value: stats.overdueTasks || 0,
+      group: 'overdue',
       icon: AlertCircle,
       color: 'bg-red-50 border-red-200',
       iconColor: 'text-red-600',
@@ -90,6 +107,40 @@ const Dashboard = () => {
           (stats.completedTasks / stats.totalTasks) * 100
         )
       : 0;
+
+  const taskGroups = {
+    all: {
+      title: 'All Tasks',
+      emptyMessage: 'No tasks available yet.',
+      tasks,
+    },
+    todo: {
+      title: 'To Do Tasks',
+      emptyMessage: 'No to do tasks right now.',
+      tasks: tasks.filter((task) => task.status === 'To Do'),
+    },
+    inProgress: {
+      title: 'In Progress Tasks',
+      emptyMessage: 'No tasks are currently in progress.',
+      tasks: tasks.filter((task) => task.status === 'In Progress'),
+    },
+    completed: {
+      title: 'Completed Tasks',
+      emptyMessage: 'No completed tasks yet.',
+      tasks: tasks.filter((task) => task.status === 'Completed'),
+    },
+    overdue: {
+      title: 'Overdue Tasks',
+      emptyMessage: 'No overdue tasks. Nice work.',
+      tasks: tasks.filter(
+        (task) => isOverdue(task.dueDate) && task.status !== 'Completed'
+      ),
+    },
+  };
+
+  const activeTaskList = selectedTaskGroup
+    ? taskGroups[selectedTaskGroup]
+    : null;
 
   if (loading) {
     return (
@@ -119,12 +170,47 @@ const Dashboard = () => {
             key={card.title}
             title={card.title}
             value={card.value}
+            isActive={selectedTaskGroup === card.group}
             icon={card.icon}
             color={card.color}
             iconColor={card.iconColor}
+            onClick={() => setSelectedTaskGroup(card.group)}
           />
         ))}
       </div>
+
+      {/* Task Preview */}
+      {activeTaskList && (
+        <div className="mb-8 rounded-lg bg-white p-6 shadow-md">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900">
+                {activeTaskList.title}
+              </h2>
+
+              <p className="text-sm text-gray-600">
+                Showing tasks from the dashboard card you selected.
+              </p>
+            </div>
+
+            <span className="w-fit rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-700">
+              {activeTaskList.tasks.length} tasks
+            </span>
+          </div>
+
+          {activeTaskList.tasks.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-gray-500">
+              {activeTaskList.emptyMessage}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {activeTaskList.tasks.map((task) => (
+                <DashboardTaskItem key={task._id} task={task} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -221,12 +307,20 @@ const Dashboard = () => {
 const StatCard = ({
   title,
   value,
+  isActive,
   icon: Icon,
   color,
   iconColor,
+  onClick,
 }) => {
   return (
-    <div className={`rounded-lg border-2 p-4 ${color}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`w-full rounded-lg border-2 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${color} ${
+        isActive ? 'ring-2 ring-primary-500 ring-offset-2' : ''
+      }`}
+    >
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-gray-600">
@@ -241,6 +335,75 @@ const StatCard = ({
         <div className="flex items-center justify-center">
           <Icon className={`h-7 w-7 ${iconColor}`} />
         </div>
+      </div>
+    </button>
+  );
+};
+
+const DashboardTaskItem = ({ task }) => {
+  const projectTitle = task.project?.title || 'No project';
+  const assigneeName = task.assignedTo?.name || 'Unassigned';
+  const overdue = isOverdue(task.dueDate) && task.status !== 'Completed';
+
+  return (
+    <div
+      className={`rounded-lg border bg-white p-4 shadow-sm transition hover:shadow-md ${
+        overdue ? 'border-red-200' : 'border-gray-200'
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-gray-900">
+            {task.title}
+          </h3>
+
+          <p className="mt-1 line-clamp-2 text-sm text-gray-600">
+            {task.description || 'No description'}
+          </p>
+        </div>
+
+        <span
+          className={`shrink-0 rounded px-2 py-1 text-xs font-medium ${getStatusColor(
+            task.status
+          )}`}
+        >
+          {task.status}
+        </span>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <span
+          className={`rounded px-2 py-1 text-xs font-medium ${getPriorityColor(
+            task.priority
+          )}`}
+        >
+          {task.priority} Priority
+        </span>
+
+        {overdue && (
+          <span className="rounded bg-red-100 px-2 py-1 text-xs font-medium text-red-800">
+            Overdue
+          </span>
+        )}
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-600">
+        <span className="flex items-center gap-1">
+          <ClipboardList className="h-4 w-4" />
+          {projectTitle}
+        </span>
+
+        <span className="flex items-center gap-1">
+          <User className="h-4 w-4" />
+          {assigneeName}
+        </span>
+
+        {task.dueDate && (
+          <span className="flex items-center gap-1">
+            <Calendar className="h-4 w-4" />
+            {formatDate(task.dueDate)}
+          </span>
+        )}
       </div>
     </div>
   );
